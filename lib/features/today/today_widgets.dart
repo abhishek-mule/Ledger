@@ -22,28 +22,36 @@ class TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: task.canStart ? onStart : null,
-      child: Container(
-        padding: const EdgeInsets.all(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: _backgroundColor,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: _borderColor,
-            width: 1,
+            width: 1.5,
           ),
         ),
         child: Row(
           children: [
-            // Status indicator
+            // Status indicator with enhanced visual
             Container(
-              width: 12,
-              height: 12,
+              width: 16,
+              height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _statusColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: _statusColor.withOpacity(0.4),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
 
             // Task info
             Expanded(
@@ -54,14 +62,28 @@ class TaskCard extends StatelessWidget {
                     task.name,
                     style: TextStyles.titleMedium.copyWith(
                       color: _textColor,
+                      fontWeight: FontWeight.w600,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${task.estimatedMinutes} min estimate',
-                    style: TextStyles.bodySmall.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 14,
+                        color: AppColors.textTertiary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${task.estimatedMinutes} min',
+                        style: TextStyles.bodySmall.copyWith(
+                          color: AppColors.textTertiary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -69,16 +91,46 @@ class TaskCard extends StatelessWidget {
 
             // Start button (only when planned)
             if (task.canStart)
-              ElevatedButton(
-                onPressed: onStart,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: ElevatedButton(
+                  onPressed: onStart,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 8,
+                    ),
+                    minimumSize: const Size(0, 0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  minimumSize: const Size(0, 0),
+                  child: const Text(
+                    'Start',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-                child: const Text('Start'),
+              )
+            else if (task.state == TaskState.completed)
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  color: AppColors.success,
+                  size: 20,
+                ),
+              )
+            else if (task.state == TaskState.abandoned)
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Icon(
+                  Icons.cancel_rounded,
+                  color: AppColors.error,
+                  size: 20,
+                ),
               ),
           ],
         ),

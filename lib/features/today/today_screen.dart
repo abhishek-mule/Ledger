@@ -23,10 +23,9 @@ class TodayScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => TodayController(),
-      child: const _TodayView(),
-    );
+    // TodayController is provided at the app level (in LedgerApp), so simply
+    // return the view. The controller is available via Provider.of<TodayController>(context).
+    return const _TodayView();
   }
 }
 
@@ -40,10 +39,66 @@ class _TodayView extends StatelessWidget {
   }
 
   void _addTask(BuildContext context) {
-    // TODO: Show task input dialog
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Add task dialog - TODO'),
+    final nameController = TextEditingController();
+    final minutesController = TextEditingController(text: '30');
+
+    // Capture controller from the surrounding context BEFORE opening a dialog.
+    // Dialog builder gets a new BuildContext that may not include the provider,
+    // so using Provider.of inside the dialog can fail with ProviderNotFoundException.
+    final controller = Provider.of<TodayController>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surfaceDark,
+        title: const Text(
+          'Add Task',
+          style: TextStyles.titleLarge,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'What needs to be done?',
+                labelStyle: TextStyles.bodyLarge,
+              ),
+              style: TextStyles.bodyLarge,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: minutesController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Estimated minutes',
+                labelStyle: TextStyles.bodyLarge,
+              ),
+              style: TextStyles.bodyLarge,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              final minutes = int.tryParse(minutesController.text) ?? 30;
+
+              if (name.isNotEmpty) {
+                // Use the controller captured from the outer context instead of
+                // calling Provider.of inside the dialog's context.
+                controller.addTask(name: name, estimatedMinutes: minutes);
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('ADD'),
+          ),
+        ],
       ),
     );
   }
@@ -103,81 +158,144 @@ class _TodayView extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
-        title: const Text(
-          'Today',
-          style: TextStyles.headlineMedium,
-        ),
-        centerTitle: true,
-        backgroundColor: AppColors.backgroundDark,
+        title: const Text('Today'),
+        backgroundColor: AppColors.surfaceDark,
         elevation: 0,
+        scrolledUnderElevation: 0,
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Current date
-              Text(
-                _formatDate(DateTime.now()),
-                style: TextStyles.labelMedium.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 24),
+              // Header with date and status
+              _buildHeader(context, controller),
+              const SizedBox(height: 32),
 
-              // Task count - direct numbers
-              Row(
-                children: [
-                  Text(
-                    '${controller.taskCount}/3 tasks',
-                    style: TextStyles.titleMedium.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (controller.taskCount > 0)
-                    TextButton(
-                      onPressed: () => _sealDay(context),
-                      child: const Text(
-                        'SEAL DAY',
-                        style: TextStyle(color: AppColors.warning),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
+              // Task count indicator
+              _buildTaskIndicator(controller),
+              const SizedBox(height: 20),
 
               // Task list
               Expanded(
                 child: controller.tasks.isEmpty
                     ? _buildEmptyState()
-                    : ListView.separated(
-                        itemCount: controller.tasks.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          return TaskCard(
-                            task: controller.tasks[index],
-                            onStart: () => _startTask(context, index),
-                          );
-                        },
-                      ),
+                    : _buildTaskList(context, controller),
               ),
 
               // Add task button
               if (controller.canAddTask)
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _addTask(context),
-                    icon: const Icon(Icons.add),
-                    label: const Text('ADD TASK'),
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _addTask(context),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Add Task'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, TodayController controller) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _formatDate(DateTime.now()),
+          style: TextStyles.labelMedium.copyWith(
+            color: AppColors.textTertiary,
+            fontSize: 12,
+            letterSpacing: 0.8,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Daily Commitments',
+          style: TextStyles.headlineLarge.copyWith(
+            fontSize: 32,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTaskIndicator(TodayController controller) {
+    final progress = controller.taskCount / 3.0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.surfaceVariantDark,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${controller.taskCount} of 3 tasks',
+                style: TextStyles.titleMedium.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '${(progress * 100).toStringAsFixed(0)}%',
+                style: TextStyles.labelMedium.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: AppColors.surfaceVariantDark,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                controller.taskCount >= 3 ? AppColors.success : AppColors.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskList(BuildContext context, TodayController controller) {
+    return ListView.separated(
+      itemCount: controller.tasks.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        return TaskCard(
+          task: controller.tasks[index],
+          onStart: () => _startTask(context, index),
+        );
+      },
     );
   }
 

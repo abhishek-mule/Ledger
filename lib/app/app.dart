@@ -6,6 +6,7 @@ import 'package:ledger/shared/data/ledger_repository.dart';
 import 'package:ledger/shared/data/shared_prefs_storage.dart';
 import 'package:ledger/shared/data/entities.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ledger/features/today/today_controller.dart';
 
 class LedgerApp extends StatefulWidget {
   const LedgerApp({super.key});
@@ -25,8 +26,7 @@ class _LedgerAppState extends State<LedgerApp> with WidgetsBindingObserver {
   }
 
   Future<LedgerRepository> _initializeRepository() async {
-    final prefs = await SharedPreferences.getInstance();
-    final storage = SharedPreferencesStorage(prefs);
+    final storage = await SharedPreferencesStorage.init();
     return LedgerRepository(storage);
   }
 
@@ -92,11 +92,25 @@ class _LedgerAppState extends State<LedgerApp> with WidgetsBindingObserver {
 
         return Provider<LedgerRepository>.value(
           value: snapshot.data!,
-          child: MaterialApp(
-            title: 'Ledger',
-            theme: AppTheme.darkTheme,
-            initialRoute: Routes.today,
-            onGenerateRoute: Routes.generateRoute,
+          child: MultiProvider(
+            providers: [
+              // LedgerRepository is already provided via the .value above, but
+              // we include a ChangeNotifierProvider for TodayController so it
+              // is accessible across routes. The provider will read the
+              // repository from this context when creating the controller.
+              ChangeNotifierProvider<TodayController>(
+                create: (context) {
+                  final repo = Provider.of<LedgerRepository>(context, listen: false);
+                  return TodayController(repository: repo);
+                },
+              ),
+            ],
+            child: MaterialApp(
+              title: 'Ledger',
+              theme: AppTheme.darkTheme,
+              initialRoute: Routes.today,
+              onGenerateRoute: Routes.generateRoute,
+            ),
           ),
         );
       },

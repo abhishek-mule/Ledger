@@ -19,8 +19,19 @@ class SharedPreferencesStorage implements LedgerStorage {
   final SharedPreferences _prefs;
   final String _prefix;
 
-  SharedPreferencesStorage(this._prefs, {String prefix = 'ledger_'})
-      : _prefix = prefix;
+  SharedPreferencesStorage._(this._prefs, this._prefix);
+
+  factory SharedPreferencesStorage() {
+    return _instance;
+  }
+
+  static late final SharedPreferencesStorage _instance;
+
+  static Future<SharedPreferencesStorage> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    _instance = SharedPreferencesStorage._(prefs, 'ledger_');
+    return _instance;
+  }
 
   // =========================================================================
   // Single Record Operations

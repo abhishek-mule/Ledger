@@ -4,6 +4,8 @@ import 'package:ledger/app/routes.dart';
 import 'package:ledger/features/today/today_models.dart';
 import 'package:ledger/features/today/today_widgets.dart';
 import 'package:ledger/shared/colors.dart';
+import 'package:ledger/shared/data/ledger_repository.dart';
+import 'package:ledger/shared/data/entities.dart';
 import 'package:ledger/shared/text_styles.dart';
 
 // TodayController - Business logic with state machine and day constraints
@@ -24,8 +26,21 @@ import 'package:ledger/shared/text_styles.dart';
 // Error handling strategy:
 //   - Debug mode (kDebugMode=true): throw exceptions to surface bugs quickly
 //   - Release mode: return TransitionFailure for graceful handling
+//
+// ARCHITECTURE: Repository is now injected (dependency inversion)
+// This controller no longer directly instantiates storage.
+// Tests can inject mock repositories. Storage backend is completely decoupled.
 
 class TodayController extends ChangeNotifier {
+  final LedgerRepository _repository;
+
+  /// Dependency injection: Repository comes from the caller
+  /// Never instantiate storage directly. That's the DI container's job.
+  TodayController({required LedgerRepository repository})
+      : _repository = repository {
+    _loadDay();
+  }
+
   final List<TaskItem> _tasks = [];
   DayState _dayState = DayState.open;
 
@@ -40,6 +55,48 @@ class TodayController extends ChangeNotifier {
   DayState get dayState => _dayState;
   bool get isDayLocked => _dayState == DayState.locked;
 
+  // Load day from storage
+  Future<void> _loadDay() async {
+    try {
+      final day = await _repository.getOrCreateToday();
+      _tasks.clear();
+
+      // Load all tasks for this day
+      final taskEntities = await _repository.getTasksForDay(day.date);
+      _tasks.addAll(taskEntities.map(_mapEntityToTaskItem));
+
+      _dayState = day.isLocked ? DayState.locked : DayState.open;
+      notifyListeners();
+    } catch (e) {
+      // First run or error - start fresh
+      _dayState = DayState.open;
+    }
+  }
+
+  // Map storage entity to domain model
+  TaskItem _mapEntityToTaskItem(TaskEntity entity) {
+    final state = switch (entity.state) {
+      'planned' => TaskState.planned,
+      'active' => TaskState.active,
+      'completed' => TaskState.completed,
+      'abandoned' => TaskState.abandoned,
+      _ => TaskState.planned,
+    };
+
+    return TaskItem(
+      id: entity.id,
+      name: entity.name,
+      estimatedMinutes: entity.estimatedMinutes,
+      actualMinutes: entity.actualMinutes,
+      state: state,
+      createdAt: entity.createdAt,
+      startedAt: entity.startedAt,
+      completedAt: entity.completedAt,
+      whatWorked: entity.whatWorked,
+      impediment: entity.impediment,
+    );
+  }
+
   // Task Management
   // =============
 
@@ -49,10 +106,7 @@ class TodayController extends ChangeNotifier {
   ///   - Max 3 tasks per day
   ///   - Task name must not be empty
   ///   - Estimate must be positive
-  void addTask({
-    required String name,
-    required int estimatedMinutes,
-  }) {
+  void addTask({required String name, required int estimatedMinutes}) {
     _checkDayOpen();
 
     if (!canAddTask) {
@@ -65,13 +119,16 @@ class TodayController extends ChangeNotifier {
       _throwOrReturn('Estimate must be positive');
     }
 
-    final newTask = TaskItem.create(
-      name: name.trim(),
-      estimatedMinutes: estimatedMinutes,
-    );
-
-    _tasks.add(newTask);
-    notifyListeners();
+    // Create task in storage
+    _repository.getOrCreateToday().then((day) {
+      return _repository.createTask(
+        name: name.trim(),
+        estimatedMinutes: estimatedMinutes,
+        dayDate: day.date,
+      );
+    }).then((_) {
+      _loadDay();
+    });
   }
 
   /// Transition task from planned to active
@@ -94,7 +151,11 @@ class TodayController extends ChangeNotifier {
     final result = task.start();
     _handleTransitionFailure(result);
 
-    notifyListeners();
+    // Update in storage
+    final entity = _mapTaskToEntity(task);
+    _repository.updateTask(entity).then((_) {
+      _loadDay();
+    });
   }
 
   /// Transition task from active to completed
@@ -108,7 +169,11 @@ class TodayController extends ChangeNotifier {
     final result = task.complete(actualMinutes: actualMinutes);
     _handleTransitionFailure(result);
 
-    notifyListeners();
+    // Update in storage
+    final entity = _mapTaskToEntity(task);
+    _repository.completeTask(entity, actualMinutes: actualMinutes).then((_) {
+      _loadDay();
+    });
   }
 
   /// Transition task from active to abandoned
@@ -122,14 +187,18 @@ class TodayController extends ChangeNotifier {
     final result = task.abandon(reason: reason);
     _handleTransitionFailure(result);
 
-    notifyListeners();
+    // Update in storage
+    final entity = _mapTaskToEntity(task);
+    _repository.abandonTask(entity, reason: reason).then((_) {
+      _loadDay();
+    });
   }
 
   /// Lock the day - no further modifications allowed
   /// Rules:
   ///   - All planned tasks automatically expire
   ///   - Day state transitions from open to locked
-  void sealDay() {
+  void sealDay() async {
     if (_dayState == DayState.locked) {
       _throwOrReturn('Day is already locked');
     }
@@ -143,6 +212,11 @@ class TodayController extends ChangeNotifier {
     }
 
     _dayState = DayState.locked;
+
+    // Seal in storage
+    final day = await _repository.getOrCreateToday();
+    await _repository.sealDay(day);
+
     notifyListeners();
   }
 
@@ -154,14 +228,18 @@ class TodayController extends ChangeNotifier {
   }) {
     final task = _validateIndex(taskIndex);
 
-    if (task.whatWorked == null) {
+    if (whatWorked != null && task.whatWorked == null) {
       task.setReflection(whatWorked: whatWorked);
     }
-    if (task.impediment == null) {
+    if (impediment != null && task.impediment == null) {
       task.setReflection(impediment: impediment);
     }
 
-    notifyListeners();
+    // Update in storage
+    final entity = _mapTaskToEntity(task);
+    _repository.updateTask(entity).then((_) {
+      _loadDay();
+    });
   }
 
   // Query Methods
@@ -197,6 +275,22 @@ class TodayController extends ChangeNotifier {
     if (_dayState == DayState.locked) {
       _throwOrReturn('Cannot modify tasks: day is locked');
     }
+  }
+
+  // Map domain model to storage entity
+  TaskEntity _mapTaskToEntity(TaskItem task) {
+    return TaskEntity(
+      id: task.id,
+      name: task.name,
+      estimatedMinutes: task.estimatedMinutes,
+      actualMinutes: task.actualMinutes,
+      state: task.state.name,
+      createdAt: task.createdAt,
+      startedAt: task.startedAt,
+      completedAt: task.completedAt,
+      whatWorked: task.whatWorked,
+      impediment: task.impediment,
+    );
   }
 
   // Error handling strategy
