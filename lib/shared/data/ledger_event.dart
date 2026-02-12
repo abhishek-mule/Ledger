@@ -349,6 +349,31 @@ class IntegrityViolationEvent {
   }
 }
 
+class EvidenceEvent {
+  static LedgerEvent create({
+    required String taskId,
+    required String dayDate,
+    required DateTime timestamp,
+    required int unlockCount,
+    required int screenOnMinutes,
+    required List<Map<String, dynamic>> topApps,
+  }) {
+    return LedgerEvent(
+      id: '${taskId}_evidence_${timestamp.millisecondsSinceEpoch}',
+      timestamp: timestamp,
+      dayDate: dayDate,
+      taskId: taskId,
+      eventType: 'evidence',
+      metadata: {
+        'action': 'Screen-time forensics',
+        'unlockCount': unlockCount,
+        'screenOnMinutes': screenOnMinutes,
+        'topApps': topApps,
+      },
+    );
+  }
+}
+
 // =============================================================================
 // EXCEPTION
 // =============================================================================

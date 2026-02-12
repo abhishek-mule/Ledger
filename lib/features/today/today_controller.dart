@@ -7,6 +7,8 @@ import 'package:ledger/shared/colors.dart';
 import 'package:ledger/shared/data/ledger_repository.dart';
 import 'package:ledger/shared/data/entities.dart';
 import 'package:ledger/shared/text_styles.dart';
+import 'package:ledger/shared/platform/screen_forensics.dart';
+import 'package:ledger/shared/data/ledger_event.dart';
 
 // TodayController - Business logic with state machine and day constraints
 // =======================================================================
@@ -169,6 +171,26 @@ class TodayController extends ChangeNotifier {
     final result = task.complete(actualMinutes: actualMinutes);
     _handleTransitionFailure(result);
 
+    // Capture screen forensics for the task window (best-effort)
+    final start = task.startedAt ?? DateTime.now();
+    final end = DateTime.now();
+
+    ScreenForensics.capture(start: start, end: end).then((metrics) async {
+      final day = await _repository.getOrCreateToday();
+      final evidenceEvent = EvidenceEvent.create(
+        taskId: task.id,
+        dayDate: day.date,
+        timestamp: DateTime.now(),
+        unlockCount: metrics.unlockCount,
+        screenOnMinutes: metrics.screenOnMinutes,
+        topApps: metrics.topApps,
+      );
+
+      await _repository.appendEvent(evidenceEvent);
+    }).catchError((_) {
+      // ignore forensic failures - they shouldn't block task completion
+    });
+
     // Update in storage
     final entity = _mapTaskToEntity(task);
     _repository.completeTask(entity, actualMinutes: actualMinutes).then((_) {
@@ -186,6 +208,26 @@ class TodayController extends ChangeNotifier {
 
     final result = task.abandon(reason: reason);
     _handleTransitionFailure(result);
+
+    // Capture screen forensics for the task window (best-effort)
+    final start = task.startedAt ?? DateTime.now();
+    final end = DateTime.now();
+
+    ScreenForensics.capture(start: start, end: end).then((metrics) async {
+      final day = await _repository.getOrCreateToday();
+      final evidenceEvent = EvidenceEvent.create(
+        taskId: task.id,
+        dayDate: day.date,
+        timestamp: DateTime.now(),
+        unlockCount: metrics.unlockCount,
+        screenOnMinutes: metrics.screenOnMinutes,
+        topApps: metrics.topApps,
+      );
+
+      await _repository.appendEvent(evidenceEvent);
+    }).catchError((_) {
+      // ignore forensic failures
+    });
 
     // Update in storage
     final entity = _mapTaskToEntity(task);

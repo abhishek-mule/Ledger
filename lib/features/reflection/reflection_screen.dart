@@ -5,6 +5,8 @@ import 'package:ledger/shared/colors.dart';
 import 'package:ledger/shared/text_styles.dart';
 import 'package:ledger/features/today/today_controller.dart';
 import 'package:ledger/features/today/today_models.dart';
+import 'package:ledger/shared/data/ledger_repository.dart';
+import 'package:ledger/shared/data/ledger_event.dart';
 
 // =============================================================================
 // REFLECTION SCREEN - Post-Mortem Quality Enforcement
@@ -36,11 +38,21 @@ class _ReflectionScreenState extends State<ReflectionScreen> {
   TaskItem? _task;
   int _actualMinutes = 0;
 
+  List<LedgerEvent> _evidenceEvents = [];
+
   @override
   void dispose() {
     _whatWorkedController.dispose();
     _impedimentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadEvidence() async {
+    if (_task == null) return;
+    final repo = Provider.of<LedgerRepository>(context, listen: false);
+    final events = await repo.getEventsForTask(_task!.id);
+    _evidenceEvents = events.where((e) => e.eventType == 'evidence').toList();
+    setState(() {});
   }
 
   void _completeReflection() {
@@ -71,14 +83,73 @@ class _ReflectionScreenState extends State<ReflectionScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    // Get data from arguments
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Load arguments and evidence when widget becomes active
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
     if (args != null) {
       _task = args['task'] as TaskItem?;
       _actualMinutes = args['actualMinutes'] ?? 0;
     }
 
+    // Load evidence events for the task
+    _loadEvidence();
+  }
+
+  Widget _buildEvidenceSection() {
+    if (_task == null) return const SizedBox.shrink();
+
+    final evidence = _evidenceEvents.isNotEmpty ? _evidenceEvents.last : null;
+    if (evidence == null) return const SizedBox.shrink();
+
+    final meta = evidence.metadata ?? {};
+    final unlockCount = meta['unlockCount'] ?? 0;
+    final screenOnMinutes = meta['screenOnMinutes'] ?? 0;
+    final topApps = (meta['topApps'] as List?) ?? [];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Forensics (evidence):',
+              style: TextStyles.titleSmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text('Unlocks: ',
+                  style: TextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
+              Text('$unlockCount',
+                  style: TextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(width: 16),
+              Text('Screen minutes: ',
+                  style: TextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
+              Text('$screenOnMinutes',
+                  style: TextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (topApps.isNotEmpty) ...[
+            Text('Top apps:',
+                style: TextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
+            const SizedBox(height: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: topApps.map<Widget>((a) {
+                final pkg = a['package'] ?? a['name'] ?? 'unknown';
+                final cnt = a['count'] ?? a['duration'] ?? 0;
+                return Text('- $pkg (${cnt})',
+                    style: TextStyles.bodySmall.copyWith(color: AppColors.textSecondary));
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final estimatedMinutes = _task?.estimatedMinutes ?? 60;
     final timeDelta = _actualMinutes - estimatedMinutes;
     final isOver = timeDelta > 0;
@@ -276,6 +347,7 @@ class _ReflectionScreenState extends State<ReflectionScreen> {
                     ),
                   ),
                 ),
+                _buildEvidenceSection(),
               ],
             ),
           ),

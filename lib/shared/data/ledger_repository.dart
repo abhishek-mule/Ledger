@@ -1,5 +1,6 @@
 import 'package:ledger/shared/data/storage_interface.dart';
 import 'package:ledger/shared/data/entities.dart';
+import 'package:ledger/shared/data/ledger_event.dart';
 
 // =============================================================================
 // LEDGER REPOSITORY - Persistence with Integrity
@@ -21,8 +22,11 @@ class LedgerRepository {
   static const String _keyCurrentDay = 'current_day';
 
   final LedgerStorage _storage;
+  final LedgerEventLog _eventLog;
 
-  LedgerRepository(this._storage);
+  LedgerRepository(LedgerStorage storage)
+      : _storage = storage,
+        _eventLog = LedgerEventLog(storage: storage);
 
   // ===========================================================================
   // DAY OPERATIONS
@@ -267,6 +271,16 @@ class LedgerRepository {
   String _todayDateString() {
     final now = DateTime.now();
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Append a LedgerEvent to the append-only event log
+  Future<LedgerEvent> appendEvent(LedgerEvent event) async {
+    return await _eventLog.append(event);
+  }
+
+  /// Get ledger events associated with a task
+  Future<List<LedgerEvent>> getEventsForTask(String taskId) async {
+    return await _eventLog.getEventsForTask(taskId);
   }
 }
 
